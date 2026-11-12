@@ -5,6 +5,8 @@ from pyscf import gto, mcscf, scf
 from pyscf.fci import cistring, direct_spin1
 from scipy.linalg import eigh
 
+import math
+
 # Stretched H4 has several determinants that matter, while LiH and water sit close
 # to a single Hartree-Fock determinant, so the set covers both regimes
 MOLECULES = {
@@ -27,9 +29,33 @@ def integrals(name: str):
 def determinant_labels(norb: int, nelec: tuple[int, int]) -> np.ndarray:
     """One (alpha, beta) bit-mask pair per determinant, in PySCF's FCI vector order"""
 
-    # TODO cistring.make_strings gives the bit masks for one spin. PySCF stores the
-    # FCI vector alpha-major, so row ia * n_beta + ib is (alpha[ia], beta[ib])
-    raise NotImplementedError("determinant_labels is a week 2 contribution spot")
+    labels = np.zeros((math.comb(norb, nelec[0])*math.comb(norb, nelec[1]), 2))
+
+    up = 2**nelec[0]-1
+    down = 2**nelec[1]-1
+
+    def nextstring(bitstring: int, spaces: int):  # gets the next label according to the ordering
+        if bitstring == 0:
+            return False, False
+        maxind = np.floor(np.log2(bitstring))
+        if maxind == spaces-1:
+            partstring, newmaxind = nextstring(bitstring-2**maxind, spaces-1)
+            if partstring == False:
+                return False, False
+            return partstring + 2**(newmaxind+1), newmaxind+1
+        else:
+            return bitstring+2**maxind, maxind+1
+        
+        
+    for i in range(labels.shape[0]):
+        labels[i][0] = up
+        labels[i][1] = down
+        down, _ = nextstring(down, norb)
+        if down == False:
+            down = 2**nelec[1]-1
+            up, _ = nextstring(up, norb)
+
+    return labels
 
 
 def fci_hamiltonian(h1, h2, ecore, norb: int, nelec: tuple[int, int]) -> np.ndarray:
